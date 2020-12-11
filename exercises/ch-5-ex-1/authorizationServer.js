@@ -30,6 +30,12 @@ var clients = [
   /*
    * Enter client information here
    */
+
+	{
+		"client_id": "oauth-client-1",
+		"client_secret": "oauth-client-secret-1",
+		"redirect_uris": ["http://localhost:9000/callback"]
+	}
 ];
 
 var codes = {};
@@ -45,10 +51,22 @@ app.get('/', function(req, res) {
 });
 
 app.get("/authorize", function(req, res){
-	
-	/*
-	 * Process the request, validate the client, and send the user to the approval page
-	 */
+
+	const { client_id, redirect_uri } = req.query;
+	const client = getClient(client_id);
+
+	if(!client){
+		res.render('error', {error: 'Unknown client'});
+		return;
+	}else if(!__.contains(client.redirect_uris, redirect_uri)){
+		res.render('error', {error: 'Invalid redirect URI'});
+		return;
+	}else{
+		const reqid = randomstring.generate(8);
+		requests[reqid] = req.query;
+		res.render('approve', {client, reqid });
+		return;
+	}
 	
 });
 
@@ -57,7 +75,47 @@ app.post('/approve', function(req, res) {
 	/*
 	 * Process the results of the approval page, authorize the client
 	 */
-	
+	const reqid = req.body.reqid;
+	const query = requests[reqid];
+	delete requests[reqid];
+
+	if(!query){
+		res.render('error', {error : 'No matching authorization request'});
+		return;
+	}
+
+	if(req.body.approve){
+
+		if(query.response_type == 'code'){
+			const code = randomstring.generate(8);
+
+			codes[code] = { request : query };
+
+			const urlParsed = buildUrl(query.redirect_uri,{
+				code,
+				state : query.state
+			});
+
+			res.redirect(urlParsed);
+
+		}else{
+
+			const urlParsed = buildUrl(query.redirect_uri, {
+				error: 'unsupported_response_type'
+			});
+
+			res.redirect(urlParsed);
+			return;
+		}
+
+	}else{
+		const urlParsed = buildUrl(query.redirect_uri, {
+			error: 'access_denied'
+		});
+		res.redirect(urlParsed);
+		return;
+	}
+
 });
 
 app.post("/token", function(req, res){
